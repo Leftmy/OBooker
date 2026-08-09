@@ -51,7 +51,7 @@ describe('Auth API Integration Tests', () => {
       const response = await request(app)
         .post('/api/v1/auth/register')
         .send(duplicateUser)
-        .expect(400);
+        .expect(409);
 
       expect(response.body).toHaveProperty('error');
       expect(response.body.error).toMatch(/already exists/i);

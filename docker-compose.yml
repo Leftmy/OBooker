@@ -4,6 +4,8 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: obooker_postgres
+    env_file:
+      - ./.env
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -23,6 +25,8 @@ services:
       context: ./apps/backend
       dockerfile: Dockerfile
     container_name: obooker_backend
+    env_file:
+      - ./.env
     ports:
       - "${PORT:-4000}:${PORT:-4000}"
     environment:

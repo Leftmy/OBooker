@@ -73,7 +73,7 @@ describe('AuthService Unit Tests', () => {
       });
 
       await expect(authService.register(registerDto)).rejects.toThrow(
-        'User with this email already exists!'
+        'User with this email already exists'
       );
       expect(mockPrisma.user.create).not.toHaveBeenCalled();
     });
@@ -107,7 +107,7 @@ describe('AuthService Unit Tests', () => {
       });
 
       await expect(authService.register(registerDto)).rejects.toThrow(
-        'User with this email already exists!'
+        'User with this email already exists'
       );
       expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
         where: { email: 'ivan@x.com' },
