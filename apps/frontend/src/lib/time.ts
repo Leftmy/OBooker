@@ -15,15 +15,15 @@ export function isValidDate(d: unknown): d is Date {
   return d instanceof Date && !isNaN(d.getTime())
 }
 
-/** Helper to safely create a Date or return a fallback */
-function safeDate(d: Date | string | number | undefined | null): Date {
+/** Helper to safely parse Date or string into a valid Date object */
+export function safeDate(d: Date | string | number | undefined | null): Date {
   if (!d) return new Date()
   const date = typeof d === 'string' || typeof d === 'number' ? new Date(d) : d
   return isValidDate(date) ? date : new Date()
 }
 
-export function getGmtOffsetLabel(timeZone: string, date: Date = new Date()): string {
-  const safeD = isValidDate(date) ? date : new Date()
+export function getGmtOffsetLabel(timeZone: string, date: Date | string = new Date()): string {
+  const safeD = safeDate(date)
   try {
     const dtf = new Intl.DateTimeFormat('en-US', {
       timeZone,
@@ -44,7 +44,7 @@ export interface SlotInfo {
   officeLabel: string
 }
 
-export function getOfficeDaySlots(officeCalDate: Date): SlotInfo[] {
+export function getOfficeDaySlots(officeCalDate: Date | string): SlotInfo[] {
   const { y, mo, d } = calParts(officeCalDate)
 
   const officeStartUtc = zonedTimeToUtc(y, mo, d, OFFICE_OPEN_HOUR, 0, OFFICE_TZ)
@@ -80,9 +80,7 @@ export function getOfficeDaySlots(officeCalDate: Date): SlotInfo[] {
   return slots
 }
 
-export function isWithinOfficeHours(startTime: Date, endTime: Date): boolean {
-  if (!isValidDate(startTime) || !isValidDate(endTime)) return false
-
+export function isWithinOfficeHours(startTime: Date | string, endTime: Date | string): boolean {
   const startParts = partsInZone(startTime, OFFICE_TZ)
   const endParts = partsInZone(endTime, OFFICE_TZ)
 
@@ -95,8 +93,8 @@ export function isWithinOfficeHours(startTime: Date, endTime: Date): boolean {
   return startMinutes >= officeOpenMinutes && endMinutes <= officeCloseMinutes
 }
 
-function zoneOffsetMinutes(date: Date, timeZone: string): number {
-  const safeD = isValidDate(date) ? date : new Date()
+function zoneOffsetMinutes(date: Date | string, timeZone: string): number {
+  const safeD = safeDate(date)
   const dtf = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hourCycle: 'h23',
@@ -140,8 +138,8 @@ const WEEKDAY_INDEX: Record<string, number> = {
   Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
 }
 
-export function partsInZone(date: Date, timeZone: string): ZonedParts {
-  const safeD = isValidDate(date) ? date : new Date()
+export function partsInZone(date: Date | string, timeZone: string = OFFICE_TZ): ZonedParts {
+  const safeD = safeDate(date)
   const dtf = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hourCycle: 'h23',
@@ -165,11 +163,11 @@ export function partsInZone(date: Date, timeZone: string): ZonedParts {
 }
 
 export function formatInZone(
-  date: Date,
+  date: Date | string,
   timeZone: string,
   options: Intl.DateTimeFormatOptions,
 ): string {
-  const safeD = isValidDate(date) ? date : new Date()
+  const safeD = safeDate(date)
   try {
     return new Intl.DateTimeFormat('en-US', { timeZone, ...options }).format(safeD)
   } catch {
@@ -181,8 +179,8 @@ export function calDate(y: number, mo: number, d: number): Date {
   return new Date(Date.UTC(y, mo - 1, d, 12, 0, 0))
 }
 
-export function calParts(date: Date) {
-  const safeD = isValidDate(date) ? date : new Date()
+export function calParts(date: Date | string) {
+  const safeD = safeDate(date)
   return { y: safeD.getUTCFullYear(), mo: safeD.getUTCMonth() + 1, d: safeD.getUTCDate() }
 }
 
@@ -205,8 +203,8 @@ export function formatRangeLocal(startIso: string, endIso: string): string {
 }
 
 /** Adds the specified number of days to a Date object */
-export function addDays(date: Date, days: number): Date {
-  const safeD = isValidDate(date) ? date : new Date()
+export function addDays(date: Date | string, days: number): Date {
+  const safeD = safeDate(date)
   const result = new Date(safeD)
   result.setDate(result.getDate() + days)
   return result
@@ -227,8 +225,7 @@ export function officeMinutesFromOpen(date: Date | string): number {
 }
 
 /** Checks whether two dates fall on the same calendar day in the given timezone */
-export function sameCalDate(d1: Date, d2: Date, timeZone: string = OFFICE_TZ): boolean {
-  if (!isValidDate(d1) || !isValidDate(d2)) return false
+export function sameCalDate(d1: Date | string, d2: Date | string, timeZone: string = OFFICE_TZ): boolean {
   const p1 = partsInZone(d1, timeZone)
   const p2 = partsInZone(d2, timeZone)
   return p1.y === p2.y && p1.mo === p2.mo && p1.d === p2.d
@@ -260,8 +257,8 @@ export function labelToMinutes(label: string): number {
 }
 
 /** Returns Monday of the current week in office timezone */
-export function startOfOfficeWeek(date: Date = new Date()): Date {
-  const safeD = isValidDate(date) ? date : new Date()
+export function startOfOfficeWeek(date: Date | string = new Date()): Date {
+  const safeD = safeDate(date)
   const p = partsInZone(safeD, OFFICE_TZ)
   const todayCal = calDate(p.y, p.mo, p.d)
   const day = p.weekday // 0 = Sun, 1 = Mon, ...

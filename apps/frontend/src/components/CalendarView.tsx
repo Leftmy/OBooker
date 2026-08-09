@@ -16,7 +16,6 @@ import {
   officeMinutesFromOpen,
   officeToday,
   partsInZone,
-  sameCalDate,
   slotLabels,
   startOfOfficeWeek,
   zonedTimeToUtc,
@@ -40,7 +39,7 @@ function isoToWeekStart(iso: string | null): Date {
 
 export function CalendarView() {
   const { user } = useAuth()
-  const { route, navigate } = useRouter()
+  const { route } = useRouter()
   const toast = useToast()
 
   const [rooms, setRooms] = useState<Room[]>([])
@@ -58,9 +57,10 @@ export function CalendarView() {
 
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Load rooms once.
+  // Load rooms once
   useEffect(() => {
-    api.listRooms()
+    api
+      .listRooms()
       .then((r) => {
         setRooms(r)
         setRoomId((cur) => cur || route.params.get('room') || r[0]?.id || '')
@@ -68,25 +68,30 @@ export function CalendarView() {
       .catch((err) => toast.error(errorMessage(err)))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch bookings when room or week changes
+  // FIX 1: Точний розрахунок діапазону для запиту записів з урахуванням OFFICE_TZ
   useEffect(() => {
     if (!roomId) return
     setLoading(true)
 
-    const start = new Date(weekStart)
-    start.setUTCHours(0, 0, 0, 0)
-    const startDate = start.toISOString()
+    const pStart = calParts(weekStart)
+    const pEnd = calParts(addDays(weekStart, 6))
 
-    const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000 - 1)
-    const endDate = end.toISOString()
+    // Згенерувати UTC ізо-рядки для 00:00:00 понеділка та 23:59:59 неділі в часовому поясі офісу
+    const startDate = zonedTimeToUtc(pStart.y, pStart.mo, pStart.d, 0, 0, OFFICE_TZ).toISOString()
+    const endDate = zonedTimeToUtc(pEnd.y, pEnd.mo, pEnd.d, 23, 59, OFFICE_TZ).toISOString()
 
-    api.listBookings({ roomId, startDate, endDate })
-      .then((b) => setBookings(b))
-      .catch((err) => toast.error(errorMessage(err)))
+    api
+      .listBookings({ roomId, startDate, endDate })
+      .then((b) => {
+        setBookings(b)
+      })
+      .catch((err) => {
+        console.error('[CalendarView] Failed to fetch bookings:', err)
+        toast.error(errorMessage(err))
+      })
       .finally(() => setLoading(false))
   }, [roomId, weekStart])
 
-  // Respond to deep links from "My Bookings".
   useEffect(() => {
     const r = route.params.get('room')
     const w = route.params.get('week')
@@ -94,13 +99,11 @@ export function CalendarView() {
     if (w) setWeekStart(isoToWeekStart(w))
   }, [route.params])
 
-  // Tick the current-time line every 30s.
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30000)
     return () => clearInterval(id)
   }, [])
 
-  // Scroll the grid to a sensible starting point (08:30-ish before open).
   useEffect(() => {
     if (!loading && scrollRef.current) {
       const minsNow = officeMinutesFromOpen(new Date())
@@ -117,13 +120,18 @@ export function CalendarView() {
   const room = rooms.find((r) => r.id === roomId)
   const today = officeToday()
 
-  // Bookings for the visible room, indexed by day column.
+  // FIX 2: Точне згрупування карток за днями в OFFICE_TZ
   const byDay = useMemo(() => {
     const map: Booking[][] = days.map(() => [])
     for (const b of bookings) {
       if (b.roomId !== roomId) continue
-      const p = partsInZone(new Date(b.startTime), OFFICE_TZ)
-      const idx = days.findIndex((d) => sameCalDate(d, p))
+      
+      const bParts = partsInZone(b.startTime, OFFICE_TZ)
+      const idx = days.findIndex((d) => {
+        const dParts = calParts(d)
+        return dParts.y === bParts.y && dParts.mo === bParts.mo && dParts.d === bParts.d
+      })
+      
       if (idx >= 0) map[idx].push(b)
     }
     return map
@@ -139,7 +147,6 @@ export function CalendarView() {
     return `${a} - ${b}`
   }, [days])
 
-  // Local-time equivalents of office hours for the banner.
   const localWindow = useMemo(() => {
     const p = calParts(officeToday())
     const open = zonedTimeToUtc(p.y, p.mo, p.d, OFFICE_OPEN_HOUR, 0, OFFICE_TZ)
@@ -298,10 +305,10 @@ export function CalendarView() {
         <p className="font-display text-base font-semibold text-slate-800">{rangeLabel}</p>
       </div>
 
-    {/* Grid */}
-    <div className="overflow-hidden rounded-2xl border border-slate-300 bg-[#F8FAFC] shadow-sm shadow-slate-900/[0.04]">
-      <div className="overflow-x-auto">
-        <div className="min-w-[720px]">
+      {/* Grid */}
+      <div className="overflow-hidden rounded-2xl border border-slate-300 bg-[#F8FAFC] shadow-sm shadow-slate-900/[0.04]">
+        <div className="overflow-x-auto">
+          <div className="min-w-[720px]">
             <div
               className="sticky top-0 z-20 grid border-b border-slate-300 bg-slate-100"
               style={{ gridTemplateColumns: `56px repeat(7, 1fr)` }}
@@ -309,7 +316,7 @@ export function CalendarView() {
               <div className="border-r border-slate-300" />
               {days.map((d, i) => {
                 const p = calParts(d)
-                const isToday = sameCalDate(today, p)
+                const isToday = calParts(today).y === p.y && calParts(today).mo === p.mo && calParts(today).d === p.d
                 return (
                   <div
                     key={d.toISOString()}
@@ -338,6 +345,7 @@ export function CalendarView() {
 
             {/* Time body */}
             <div
+              ref={scrollRef}
               className="grid"
               style={{ gridTemplateColumns: `56px repeat(7, 1fr)`, height: GRID_H }}
             >
@@ -357,7 +365,7 @@ export function CalendarView() {
               {/* Day columns */}
               {days.map((d, dayIdx) => {
                 const p = calParts(d)
-                const isToday = sameCalDate(today, p)
+                const isToday = calParts(today).y === p.y && calParts(today).mo === p.mo && calParts(today).d === p.d
                 return (
                   <div
                     key={d.toISOString()}
@@ -386,19 +394,22 @@ export function CalendarView() {
 
                     {/* Booking cards */}
                     {byDay[dayIdx].map((b) => {
-                      const top = (officeMinutesFromOpen(new Date(b.startTime)) / 30) * SLOT_H
+                      // FIX 3: Розпах карток відносно часу офісу
+                      const top = (officeMinutesFromOpen(b.startTime) / 30) * SLOT_H
                       const dur = durationMinutes(b.startTime, b.endTime)
                       const height = Math.max((dur / 30) * SLOT_H - 3, 22)
                       const mine = b.userId === user?.id
-                      const timeStr = `${formatInZone(new Date(b.startTime), localTz, {
+                      
+                      const timeStr = `${formatInZone(b.startTime, localTz, {
                         hour: '2-digit',
                         minute: '2-digit',
                         hour12: false,
-                      })}–${formatInZone(new Date(b.endTime), localTz, {
+                      })}–${formatInZone(b.endTime, localTz, {
                         hour: '2-digit',
                         minute: '2-digit',
                         hour12: false,
                       })}`
+
                       return (
                         <div
                           key={b.id}
@@ -468,8 +479,9 @@ export function CalendarView() {
               })}
             </div>
           </div>
+        </div>
       </div>
-    </div>
+
       {/* Legend */}
       <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
         <span className="flex items-center gap-1.5">
