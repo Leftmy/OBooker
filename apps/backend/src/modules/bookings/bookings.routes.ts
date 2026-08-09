@@ -1,3 +1,73 @@
+/**
+ * @openapi
+ * /api/v1/bookings:
+ *   post:
+ *     tags: [Bookings]
+ *     summary: Create a booking
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Booking created
+ *       401:
+ *         description: Unauthorized
+ */
+/**
+ * @openapi
+ * /api/v1/bookings:
+ *   get:
+ *     tags: [Bookings]
+ *     summary: List bookings
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Booking list returned
+ *       401:
+ *         description: Unauthorized
+ */
+/**
+ * @openapi
+ * /api/v1/bookings/my:
+ *   get:
+ *     tags: [Bookings]
+ *     summary: Get my bookings
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: My bookings returned
+ *       401:
+ *         description: Unauthorized
+ */
+/**
+ * @openapi
+ * /api/v1/bookings/{id}:
+ *   get:
+ *     tags: [Bookings]
+ *     summary: Get one booking
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Booking returned
+ *       401:
+ *         description: Unauthorized
+ */
+/**
+ * @openapi
+ * /api/v1/bookings/{id}:
+ *   delete:
+ *     tags: [Bookings]
+ *     summary: Cancel a booking
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Booking cancelled
+ *       401:
+ *         description: Unauthorized
+ */
 import { Router } from 'express';
 import { BookingsController } from './bookings.controller';
 import { authMiddleware } from '../../common/middleware/auth.middleware';
