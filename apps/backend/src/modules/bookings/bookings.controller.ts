@@ -58,6 +58,21 @@ async create(req: Request, res: Response, next: NextFunction) {
     }
   }
 
+  async getMyBookings(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const type = req.query.type as 'upcoming' | 'past' | undefined;
+      const bookings = await this.bookingsService.getUserBookings(userId, type);
+      return res.status(200).json(bookings);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getOne(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req as any).user?.id;

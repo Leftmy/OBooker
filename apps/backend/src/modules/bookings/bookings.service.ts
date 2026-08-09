@@ -41,15 +41,27 @@ export class BookingsService {
     });
   }
 
-  async getUserBookings(userId: string) {
+  async getUserBookings(userId: string, type?: 'upcoming' | 'past') {
+    const now = new Date();
+    const where: any = { userId };
+    const orderBy: any = {};
+
+    if (type === 'upcoming') {
+      where.startTime = { gte: now };
+      orderBy.startTime = 'asc';
+    } else if (type === 'past') {
+      where.endTime = { lt: now };
+      orderBy.startTime = 'desc';
+    } else {
+      orderBy.startTime = 'desc';
+    }
+
     return await this.prisma.booking.findMany({
-      where: { userId },
+      where,
       include: {
         room: true,
       },
-      orderBy: {
-        startTime: 'desc',
-      },
+      orderBy,
     });
   }
 
