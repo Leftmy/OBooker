@@ -83,6 +83,23 @@ export function BookingModal({
 
   const durationMin = start && end ? labelToMinutes(end) - labelToMinutes(start) : 0
 
+  /** Форматує київську мітку слота (наприклад "10:00") у локальний час користувача */
+  const formatSlotLabel = (officeLabel: string) => {
+    if (!officeLabel || !dayIso) return officeLabel
+    if (localTz === OFFICE_TZ) return officeLabel
+
+    const p = calParts(new Date(dayIso))
+    const [h, m] = officeLabel.split(':').map(Number)
+    const utcDate = zonedTimeToUtc(p.y, p.mo, p.d, h, m, OFFICE_TZ)
+    const localStr = formatInZone(utcDate, localTz, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+
+    return `${localStr} (${officeLabel} Kyiv)`
+  }
+
   const localHint = useMemo(() => {
     if (!dayIso || !start || !end || localTz === OFFICE_TZ) return ''
     const p = calParts(new Date(dayIso))
@@ -92,7 +109,7 @@ export function BookingModal({
     const eu = zonedTimeToUtc(p.y, p.mo, p.d, eh, em, OFFICE_TZ)
     const fmt = (d: Date) =>
       formatInZone(d, localTz, { hour: '2-digit', minute: '2-digit', hour12: false })
-    return `${fmt(su)}-${fmt(eu)} your time`
+    return `${fmt(su)}–${fmt(eu)} (${localTz})`
   }, [dayIso, start, end])
 
   if (!draft) return null
@@ -135,7 +152,7 @@ export function BookingModal({
   }
 
   const dayLabel = dayIso
-    ? formatInZone(new Date(dayIso), OFFICE_TZ, {
+    ? formatInZone(new Date(dayIso), localTz, {
         weekday: 'long',
         month: 'short',
         day: 'numeric',
@@ -194,7 +211,7 @@ export function BookingModal({
             <Select id="bk-date" value={dayIso} onChange={(e) => setDayIso(e.target.value)}>
               {weekDays.map((d) => (
                 <option key={d.toISOString()} value={d.toISOString()}>
-                  {formatInZone(d, OFFICE_TZ, { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {formatInZone(d, localTz, { weekday: 'short', month: 'short', day: 'numeric' })}
                 </option>
               ))}
             </Select>
@@ -206,7 +223,7 @@ export function BookingModal({
             <Select id="bk-start" value={start} onChange={(e) => setStart(e.target.value)}>
               {startOptions.map((l) => (
                 <option key={l} value={l}>
-                  {l}
+                  {formatSlotLabel(l)}
                 </option>
               ))}
             </Select>
@@ -215,7 +232,7 @@ export function BookingModal({
             <Select id="bk-end" value={end} onChange={(e) => setEnd(e.target.value)}>
               {endOptions.map((l) => (
                 <option key={l} value={l}>
-                  {l}
+                  {formatSlotLabel(l)}
                 </option>
               ))}
             </Select>
@@ -224,8 +241,14 @@ export function BookingModal({
 
         <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3.5 py-2.5 text-xs">
           <span className="font-medium text-slate-500">
-            Office time · Europe/Kyiv
-            {localHint && <span className="ml-2 text-slate-400">({localHint})</span>}
+            {localTz === OFFICE_TZ ? (
+              'Office time · Europe/Kyiv'
+            ) : (
+              <>
+                Local time · {localTz}
+                {localHint && <span className="ml-2 text-slate-400">({localHint})</span>}
+              </>
+            )}
           </span>
           <span className="font-mono font-semibold text-indigo-600">
             {durationMin > 0

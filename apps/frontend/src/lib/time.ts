@@ -3,10 +3,100 @@ export const OFFICE_OPEN_HOUR = 9
 export const OFFICE_CLOSE_HOUR = 19
 export const SLOT_MINUTES = 30
 
-export const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+export const localTz =
+  typeof window !== 'undefined'
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone
+    : 'UTC'
 
-/** Minutes that `date` is offset from UTC in the given time zone. */
+export const isDifferentTz = localTz !== OFFICE_TZ
+
+/** Helper to validate Date objects */
+export function isValidDate(d: unknown): d is Date {
+  return d instanceof Date && !isNaN(d.getTime())
+}
+
+/** Helper to safely create a Date or return a fallback */
+function safeDate(d: Date | string | number | undefined | null): Date {
+  if (!d) return new Date()
+  const date = typeof d === 'string' || typeof d === 'number' ? new Date(d) : d
+  return isValidDate(date) ? date : new Date()
+}
+
+export function getGmtOffsetLabel(timeZone: string, date: Date = new Date()): string {
+  const safeD = isValidDate(date) ? date : new Date()
+  try {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'shortOffset',
+    })
+    const parts = dtf.formatToParts(safeD)
+    return parts.find((p) => p.type === 'timeZoneName')?.value ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export interface SlotInfo {
+  index: number
+  utcStart: Date
+  utcEnd: Date
+  userLabel: string
+  officeLabel: string
+}
+
+export function getOfficeDaySlots(officeCalDate: Date): SlotInfo[] {
+  const { y, mo, d } = calParts(officeCalDate)
+
+  const officeStartUtc = zonedTimeToUtc(y, mo, d, OFFICE_OPEN_HOUR, 0, OFFICE_TZ)
+  const totalSlots = ((OFFICE_CLOSE_HOUR - OFFICE_OPEN_HOUR) * 60) / SLOT_MINUTES
+
+  const slots: SlotInfo[] = []
+
+  for (let i = 0; i < totalSlots; i++) {
+    const utcStart = new Date(officeStartUtc.getTime() + i * SLOT_MINUTES * 60000)
+    const utcEnd = new Date(utcStart.getTime() + SLOT_MINUTES * 60000)
+
+    const userLabel = formatInZone(utcStart, localTz, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+
+    const officeLabel = formatInZone(utcStart, OFFICE_TZ, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+
+    slots.push({
+      index: i,
+      utcStart,
+      utcEnd,
+      userLabel,
+      officeLabel,
+    })
+  }
+
+  return slots
+}
+
+export function isWithinOfficeHours(startTime: Date, endTime: Date): boolean {
+  if (!isValidDate(startTime) || !isValidDate(endTime)) return false
+
+  const startParts = partsInZone(startTime, OFFICE_TZ)
+  const endParts = partsInZone(endTime, OFFICE_TZ)
+
+  const startMinutes = startParts.hour * 60 + startParts.minute
+  const endMinutes = endParts.hour * 60 + endParts.minute
+
+  const officeOpenMinutes = OFFICE_OPEN_HOUR * 60
+  const officeCloseMinutes = OFFICE_CLOSE_HOUR * 60
+
+  return startMinutes >= officeOpenMinutes && endMinutes <= officeCloseMinutes
+}
+
 function zoneOffsetMinutes(date: Date, timeZone: string): number {
+  const safeD = isValidDate(date) ? date : new Date()
   const dtf = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hourCycle: 'h23',
@@ -17,14 +107,13 @@ function zoneOffsetMinutes(date: Date, timeZone: string): number {
     minute: '2-digit',
     second: '2-digit',
   })
-  const parts = dtf.formatToParts(date)
+  const parts = dtf.formatToParts(safeD)
   const map: Record<string, number> = {}
   for (const p of parts) if (p.type !== 'literal') map[p.type] = Number(p.value)
   const asUTC = Date.UTC(map.year, map.month - 1, map.day, map.hour, map.minute, map.second)
-  return (asUTC - date.getTime()) / 60000
+  return (asUTC - safeD.getTime()) / 60000
 }
 
-/** Convert a wall-clock time in `timeZone` into the corresponding UTC Date. */
 export function zonedTimeToUtc(
   y: number,
   mo: number,
@@ -44,21 +133,15 @@ export interface ZonedParts {
   d: number
   hour: number
   minute: number
-  weekday: number // 0 = Sunday
+  weekday: number
 }
 
 const WEEKDAY_INDEX: Record<string, number> = {
-  Sun: 0,
-  Mon: 1,
-  Tue: 2,
-  Wed: 3,
-  Thu: 4,
-  Fri: 5,
-  Sat: 6,
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
 }
 
-/** Break a UTC instant into its wall-clock parts in the given time zone. */
 export function partsInZone(date: Date, timeZone: string): ZonedParts {
+  const safeD = isValidDate(date) ? date : new Date()
   const dtf = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hourCycle: 'h23',
@@ -70,7 +153,7 @@ export function partsInZone(date: Date, timeZone: string): ZonedParts {
     weekday: 'short',
   })
   const map: Record<string, string> = {}
-  for (const p of dtf.formatToParts(date)) if (p.type !== 'literal') map[p.type] = p.value
+  for (const p of dtf.formatToParts(safeD)) if (p.type !== 'literal') map[p.type] = p.value
   return {
     y: Number(map.year),
     mo: Number(map.month),
@@ -86,74 +169,31 @@ export function formatInZone(
   timeZone: string,
   options: Intl.DateTimeFormatOptions,
 ): string {
-  return new Intl.DateTimeFormat('en-US', { timeZone, ...options }).format(date)
+  const safeD = isValidDate(date) ? date : new Date()
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone, ...options }).format(safeD)
+  } catch {
+    return ''
+  }
 }
 
-/** A calendar date represented as a UTC-noon Date, safe from tz shifting. */
 export function calDate(y: number, mo: number, d: number): Date {
   return new Date(Date.UTC(y, mo - 1, d, 12, 0, 0))
 }
 
-export function addDays(date: Date, n: number): Date {
-  return new Date(date.getTime() + n * 86400000)
-}
-
 export function calParts(date: Date) {
-  return { y: date.getUTCFullYear(), mo: date.getUTCMonth() + 1, d: date.getUTCDate() }
+  const safeD = isValidDate(date) ? date : new Date()
+  return { y: safeD.getUTCFullYear(), mo: safeD.getUTCMonth() + 1, d: safeD.getUTCDate() }
 }
 
-/** Monday-based start of the week containing the given office calendar date. */
-export function startOfOfficeWeek(date: Date): Date {
-  const dow = date.getUTCDay() // 0 = Sun
-  const diff = dow === 0 ? -6 : 1 - dow
-  return addDays(date, diff)
-}
-
-/** Today's calendar date in office time, as a UTC-noon Date. */
 export function officeToday(): Date {
   const p = partsInZone(new Date(), OFFICE_TZ)
   return calDate(p.y, p.mo, p.d)
 }
 
-export function weekDays(weekStart: Date): Date[] {
-  return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
-}
-
-export const SLOTS_PER_DAY =
-  ((OFFICE_CLOSE_HOUR - OFFICE_OPEN_HOUR) * 60) / SLOT_MINUTES
-
-/** Labels like "09:00", "09:30" ... for slot starts. */
-export function slotLabels(): string[] {
-  const out: string[] = []
-  for (let i = 0; i <= SLOTS_PER_DAY; i++) {
-    const total = OFFICE_OPEN_HOUR * 60 + i * SLOT_MINUTES
-    const h = Math.floor(total / 60)
-    const m = total % 60
-    out.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
-  }
-  return out
-}
-
-export function labelToMinutes(label: string): number {
-  const [h, m] = label.split(':').map(Number)
-  return h * 60 + m
-}
-
-/** minutes since office open for a booking's office-local start */
-export function officeMinutesFromOpen(date: Date): number {
-  const p = partsInZone(date, OFFICE_TZ)
-  return (p.hour - OFFICE_OPEN_HOUR) * 60 + p.minute
-}
-
-export function sameCalDate(a: Date, b: { y: number; mo: number; d: number }) {
-  return (
-    a.getUTCFullYear() === b.y && a.getUTCMonth() + 1 === b.mo && a.getUTCDate() === b.d
-  )
-}
-
 export function formatRangeLocal(startIso: string, endIso: string): string {
-  const start = new Date(startIso)
-  const end = new Date(endIso)
+  const start = safeDate(startIso)
+  const end = safeDate(endIso)
   const day = formatInZone(start, localTz, {
     weekday: 'short',
     month: 'short',
@@ -164,6 +204,67 @@ export function formatRangeLocal(startIso: string, endIso: string): string {
   return `${day} · ${t(start)}–${t(end)}`
 }
 
-export function durationMinutes(startIso: string, endIso: string): number {
-  return (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000
+/** Adds the specified number of days to a Date object */
+export function addDays(date: Date, days: number): Date {
+  const safeD = isValidDate(date) ? date : new Date()
+  const result = new Date(safeD)
+  result.setDate(result.getDate() + days)
+  return result
+}
+
+/** Calculates the duration between two dates in minutes */
+export function durationMinutes(start: Date | string, end: Date | string): number {
+  const startDate = safeDate(start)
+  const endDate = safeDate(end)
+  return Math.round((endDate.getTime() - startDate.getTime()) / 60000)
+}
+
+/** Calculates minutes elapsed from office opening time */
+export function officeMinutesFromOpen(date: Date | string): number {
+  const d = safeDate(date)
+  const parts = partsInZone(d, OFFICE_TZ)
+  return parts.hour * 60 + parts.minute - OFFICE_OPEN_HOUR * 60
+}
+
+/** Checks whether two dates fall on the same calendar day in the given timezone */
+export function sameCalDate(d1: Date, d2: Date, timeZone: string = OFFICE_TZ): boolean {
+  if (!isValidDate(d1) || !isValidDate(d2)) return false
+  const p1 = partsInZone(d1, timeZone)
+  const p2 = partsInZone(d2, timeZone)
+  return p1.y === p2.y && p1.mo === p2.mo && p1.d === p2.d
+}
+
+/** Generates an array of time slot labels (e.g., ["09:00", "09:30", ...]) */
+export function slotLabels(
+  openHour: number = OFFICE_OPEN_HOUR,
+  closeHour: number = OFFICE_CLOSE_HOUR,
+  stepMinutes: number = SLOT_MINUTES,
+): string[] {
+  const labels: string[] = []
+  const startTotal = openHour * 60
+  const endTotal = closeHour * 60
+
+  for (let m = startTotal; m <= endTotal; m += stepMinutes) {
+    const hh = String(Math.floor(m / 60)).padStart(2, '0')
+    const mm = String(m % 60).padStart(2, '0')
+    labels.push(`${hh}:${mm}`)
+  }
+  return labels
+}
+
+/** Converts an "HH:MM" string label to total minutes from midnight */
+export function labelToMinutes(label: string): number {
+  if (!label) return 0
+  const [h, m] = label.split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
+/** Returns Monday of the current week in office timezone */
+export function startOfOfficeWeek(date: Date = new Date()): Date {
+  const safeD = isValidDate(date) ? date : new Date()
+  const p = partsInZone(safeD, OFFICE_TZ)
+  const todayCal = calDate(p.y, p.mo, p.d)
+  const day = p.weekday // 0 = Sun, 1 = Mon, ...
+  const diffToMonday = day === 0 ? -6 : 1 - day
+  return addDays(todayCal, diffToMonday)
 }
