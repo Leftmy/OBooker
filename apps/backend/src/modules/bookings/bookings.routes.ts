@@ -63,9 +63,30 @@
  *   get:
  *     tags: [Bookings]
  *     summary: List all bookings
- *     description: Retrieve a list of all user bookings. Requires authentication.
+ *     description: Retrieve a list of bookings filtered by optional query criteria. Requires authentication.
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: roomId
+ *         required: false
+ *         schema:
+ *           type: string
+ *         example: "c9c22886-f14d-4bc0-93a9-19fc16dbbf89"
+ *       - in: query
+ *         name: startDate
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         example: "2026-09-01T00:00:00.000Z"
+ *       - in: query
+ *         name: endDate
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         example: "2026-09-30T23:59:59.999Z"
  *     responses:
  *       200:
  *         description: Booking list returned successfully
@@ -108,22 +129,37 @@
  *           type: string
  *           enum: [upcoming, past]
  *         example: "upcoming"
+ *       - in: query
+ *         name: cursor
+ *         required: false
+ *         schema:
+ *           type: string
+ *         example: "a123b456-c789-d012-e345-f67890123456"
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 10
+ *         example: 10
  *     responses:
  *       200:
  *         description: My bookings returned successfully
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/BookingResponse'
+ *               $ref: '#/components/schemas/BookingsListResponse'
  *             example:
- *               - id: "a123b456-c789-d012-e345-f67890123456"
- *                 title: "Team Sync"
- *                 roomId: "c9c22886-f14d-4bc0-93a9-19fc16dbbf89"
- *                 userId: "b45037d0-1a6e-41a4-9271-bfbd564d309f"
- *                 startTime: "2026-09-01T10:00:00.000Z"
- *                 endTime: "2026-09-01T12:00:00.000Z"
+ *               items:
+ *                 - id: "a123b456-c789-d012-e345-f67890123456"
+ *                   title: "Team Sync"
+ *                   roomId: "c9c22886-f14d-4bc0-93a9-19fc16dbbf89"
+ *                   userId: "b45037d0-1a6e-41a4-9271-bfbd564d309f"
+ *                   startTime: "2026-09-01T10:00:00.000Z"
+ *                   endTime: "2026-09-01T12:00:00.000Z"
+ *               nextCursor: null
+ *               hasMore: false
  *       401:
  *         description: Unauthorized
  *         content:

@@ -81,22 +81,43 @@ const swaggerOptions = {
         },
         BookingCreateRequest: {
           type: 'object',
-          required: ['roomId', 'startDate', 'endDate'],
+          required: ['title', 'roomId', 'startTime', 'endTime'],
           properties: {
+            title: { type: 'string' },
             roomId: { type: 'string' },
-            startDate: { type: 'string', format: 'date-time' },
-            endDate: { type: 'string', format: 'date-time' },
+            startTime: { type: 'string', format: 'date-time' },
+            endTime: { type: 'string', format: 'date-time' },
           },
         },
         BookingResponse: {
           type: 'object',
           properties: {
             id: { type: 'string' },
+            title: { type: 'string' },
             userId: { type: 'string' },
             roomId: { type: 'string' },
-            startDate: { type: 'string', format: 'date-time' },
-            endDate: { type: 'string', format: 'date-time' },
-            status: { type: 'string' },
+            startTime: { type: 'string', format: 'date-time' },
+            endTime: { type: 'string', format: 'date-time' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        BookingsListResponse: {
+          type: 'object',
+          properties: {
+            items: {
+              type: 'array',
+              items: {
+                $ref: '#/components/schemas/BookingResponse',
+              },
+            },
+            nextCursor: {
+              type: 'string',
+              nullable: true,
+            },
+            hasMore: {
+              type: 'boolean',
+            },
           },
         },
         ErrorResponse: {

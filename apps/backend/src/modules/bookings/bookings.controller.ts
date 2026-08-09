@@ -51,7 +51,12 @@ async create(req: Request, res: Response, next: NextFunction) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      const bookings = await this.bookingsService.getUserBookings(userId);
+      const { roomId, startDate, endDate } = req.query;
+      const bookings = await this.bookingsService.getAllBookings(
+        roomId as string,
+        startDate as string,
+        endDate as string
+      );
       return res.status(200).json(bookings);
     } catch (error) {
       next(error);
@@ -66,7 +71,10 @@ async create(req: Request, res: Response, next: NextFunction) {
       }
 
       const type = req.query.type as 'upcoming' | 'past' | undefined;
-      const bookings = await this.bookingsService.getUserBookings(userId, type);
+      const cursor = req.query.cursor as string | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
+
+      const bookings = await this.bookingsService.getUserBookings(userId, type, cursor, limit);
       return res.status(200).json(bookings);
     } catch (error) {
       next(error);

@@ -1,6 +1,7 @@
 // src/modules/bookings/bookings.service.ts
 import { PrismaClient } from '@prisma/client';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { isWithinOfficeHours, isValidDuration, isSlotAligned } from './bookings.utils';
 
 export class BookingsService {
   constructor(private prisma: PrismaClient) {}
@@ -9,6 +10,22 @@ export class BookingsService {
     const { roomId, startTime, endTime } = dto;
     const start = new Date(startTime);
     const end = new Date(endTime);
+
+    if (start >= end) {
+      throw new Error('Start time must be before end time');
+    }
+
+    if (!isSlotAligned(start) || !isSlotAligned(end)) {
+      throw new Error('Booking time must be aligned to 30-minute intervals');
+    }
+
+    if (!isValidDuration(start, end)) {
+      throw new Error('Duration must be between 30 minutes and 4 hours');
+    }
+
+    if (!isWithinOfficeHours(start, end)) {
+      throw new Error('Booking must be within office hours (09:00 - 19:00)');
+    }
 
     const room = await this.prisma.room.findUnique({
       where: { id: roomId },
@@ -41,27 +58,69 @@ export class BookingsService {
     });
   }
 
-  async getUserBookings(userId: string, type?: 'upcoming' | 'past') {
+  async getUserBookings(
+    userId: string,
+    type?: 'upcoming' | 'past',
+    cursor?: string,
+    limit: number = 10
+  ) {
     const now = new Date();
     const where: any = { userId };
-    const orderBy: any = {};
+    const orderBy: any = [];
 
     if (type === 'upcoming') {
       where.startTime = { gte: now };
-      orderBy.startTime = 'asc';
+      orderBy.push({ startTime: 'asc' });
+      orderBy.push({ id: 'asc' });
     } else if (type === 'past') {
       where.endTime = { lt: now };
-      orderBy.startTime = 'desc';
+      orderBy.push({ startTime: 'desc' });
+      orderBy.push({ id: 'desc' });
     } else {
-      orderBy.startTime = 'desc';
+      orderBy.push({ startTime: 'desc' });
+      orderBy.push({ id: 'desc' });
+    }
+
+    const query: any = {
+      where,
+      include: { room: true },
+      orderBy,
+      take: limit + 1,
+    };
+
+    if (cursor) {
+      query.cursor = { id: cursor };
+      query.skip = 1; // Skip the cursor itself
+    }
+
+    const bookings = await this.prisma.booking.findMany(query);
+    const hasMore = bookings.length > limit;
+    const items = hasMore ? bookings.slice(0, limit) : bookings;
+    const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+    return {
+      items,
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  async getAllBookings(roomId?: string, startDate?: string, endDate?: string) {
+    const where: any = {};
+    
+    if (roomId) {
+      where.roomId = roomId;
+    }
+
+    if (startDate && endDate) {
+      where.startTime = { gte: new Date(startDate) };
+      where.endTime = { lte: new Date(endDate) };
     }
 
     return await this.prisma.booking.findMany({
       where,
-      include: {
-        room: true,
-      },
-      orderBy,
+      include: { room: true },
+      orderBy: { startTime: 'asc' },
     });
   }
 
