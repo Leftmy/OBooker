@@ -22,7 +22,8 @@ import {
 } from '../lib/time'
 import { BookingModal, type BookingDraft } from './BookingModal'
 import { ConfirmDialog } from './ConfirmDialog'
-import { Badge } from './ui'
+import { FilterModal, type RoomFilterState } from './FilterModal'
+import { Badge, Button } from './ui'
 
 const SLOT_H = 46 // px per 30-minute slot
 const TOTAL_MIN = (OFFICE_CLOSE_HOUR - OFFICE_OPEN_HOUR) * 60
@@ -51,13 +52,24 @@ export function CalendarView() {
   )
   const [now, setNow] = useState(() => new Date())
 
+  // Modal states
   const [draft, setDraft] = useState<BookingDraft | null>(null)
   const [cancelTarget, setCancelTarget] = useState<Booking | null>(null)
   const [cancelling, setCancelling] = useState(false)
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+
+  // Filter state
+  const [filters, setFilters] = useState<RoomFilterState>({
+    floor: 'all',
+    minCapacity: 0,
+    search: '',
+    sortBy: 'name',
+    sortOrder: 'asc',
+  })
 
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Load rooms once
+  // Load rooms once on initial render
   useEffect(() => {
     api
       .listRooms()
@@ -68,7 +80,7 @@ export function CalendarView() {
       .catch((err) => toast.error(errorMessage(err)))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // FIX 1: Точний розрахунок діапазону для запиту записів з урахуванням OFFICE_TZ
+  // Fetch bookings for the selected room and date range
   useEffect(() => {
     if (!roomId) return
     setLoading(true)
@@ -76,7 +88,6 @@ export function CalendarView() {
     const pStart = calParts(weekStart)
     const pEnd = calParts(addDays(weekStart, 6))
 
-    // Згенерувати UTC ізо-рядки для 00:00:00 понеділка та 23:59:59 неділі в часовому поясі офісу
     const startDate = zonedTimeToUtc(pStart.y, pStart.mo, pStart.d, 0, 0, OFFICE_TZ).toISOString()
     const endDate = zonedTimeToUtc(pEnd.y, pEnd.mo, pEnd.d, 23, 59, OFFICE_TZ).toISOString()
 
@@ -92,6 +103,7 @@ export function CalendarView() {
       .finally(() => setLoading(false))
   }, [roomId, weekStart])
 
+  // Sync state with route parameters
   useEffect(() => {
     const r = route.params.get('room')
     const w = route.params.get('week')
@@ -99,11 +111,13 @@ export function CalendarView() {
     if (w) setWeekStart(isoToWeekStart(w))
   }, [route.params])
 
+  // Periodic update for current time indicator
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30000)
     return () => clearInterval(id)
   }, [])
 
+  // Auto-scroll grid to current time slot
   useEffect(() => {
     if (!loading && scrollRef.current) {
       const minsNow = officeMinutesFromOpen(new Date())
@@ -111,6 +125,42 @@ export function CalendarView() {
       scrollRef.current.scrollTop = Math.max(0, target)
     }
   }, [loading])
+
+  // Memoized filter calculation for rooms
+  const filteredRooms = useMemo(() => {
+    const result = rooms.filter((r) => {
+      if (filters.floor !== 'all' && r.floor !== Number(filters.floor)) return false
+      if (filters.minCapacity > 0 && r.capacity < filters.minCapacity) return false
+      if (filters.search && !r.name.toLowerCase().includes(filters.search.toLowerCase())) {
+        return false
+      }
+      return true
+    })
+
+    return result.sort((a, b) => {
+      let comp = 0
+      if (filters.sortBy === 'name') {
+        comp = a.name.localeCompare(b.name)
+      } else if (filters.sortBy === 'floor') {
+        comp = a.floor - b.floor
+      } else if (filters.sortBy === 'capacity') {
+        comp = a.capacity - b.capacity
+      }
+      return filters.sortOrder === 'asc' ? comp : -comp
+    })
+  }, [rooms, filters])
+
+  // Extract unique available floor numbers for the filter modal
+  const availableFloors = useMemo(() => {
+    return Array.from(new Set(rooms.map((r) => r.floor))).sort((a, b) => a - b)
+  }, [rooms])
+
+  // Automatically adjust selected roomId if current selection is filtered out
+  useEffect(() => {
+    if (filteredRooms.length > 0 && !filteredRooms.some((r) => r.id === roomId)) {
+      setRoomId(filteredRooms[0].id)
+    }
+  }, [filteredRooms, roomId])
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -120,18 +170,18 @@ export function CalendarView() {
   const room = rooms.find((r) => r.id === roomId)
   const today = officeToday()
 
-  // FIX 2: Точне згрупування карток за днями в OFFICE_TZ
+  // Group bookings by weekday column
   const byDay = useMemo(() => {
     const map: Booking[][] = days.map(() => [])
     for (const b of bookings) {
       if (b.roomId !== roomId) continue
-      
+
       const bParts = partsInZone(b.startTime, OFFICE_TZ)
       const idx = days.findIndex((d) => {
         const dParts = calParts(d)
         return dParts.y === bParts.y && dParts.mo === bParts.mo && dParts.d === bParts.d
       })
-      
+
       if (idx >= 0) map[idx].push(b)
     }
     return map
@@ -169,6 +219,24 @@ export function CalendarView() {
     [roomId],
   )
 
+  // Open creation modal with preselected default slot
+  const handleOpenNewModal = () => {
+    if (!roomId) return
+    const isTodayInWeek = days.some((d) => {
+      const p1 = calParts(d)
+      const p2 = calParts(today)
+      return p1.y === p2.y && p1.mo === p2.mo && p1.d === p2.d
+    })
+    const defaultDay = isTodayInWeek ? today : days[0]
+    const defaultSlot = labels[0] || '09:00'
+
+    setDraft({
+      roomId,
+      day: defaultDay,
+      startLabel: defaultSlot,
+    })
+  }
+
   const onCreated = (booking: Booking) => {
     setBookings((prev) => [...prev, booking])
     setDraft(null)
@@ -193,7 +261,12 @@ export function CalendarView() {
   const nowOffset = officeMinutesFromOpen(now)
   const showNowLine = nowOffset >= 0 && nowOffset <= TOTAL_MIN
 
-  if (loading) {
+  const activeFiltersCount =
+    (filters.floor !== 'all' ? 1 : 0) +
+    (filters.minCapacity > 0 ? 1 : 0) +
+    (filters.search.trim() !== '' ? 1 : 0)
+
+  if (loading && rooms.length === 0) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-slate-400">
@@ -206,60 +279,107 @@ export function CalendarView() {
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
-      {/* Room selector */}
+      {/* Header and top controls */}
       <div className="mb-4">
-        <div className="flex items-end justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="font-display text-2xl font-bold tracking-tight text-slate-900">
               Room schedule
             </h1>
             <p className="mt-0.5 text-sm text-slate-500">
-              Pick a room, then click any open slot to book.
+              Pick a room, then click any open slot or use the button to book.
             </p>
           </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsFilterOpen(true)}
+              className="relative flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+            >
+              <svg viewBox="0 0 20 20" className="size-4 text-slate-500" fill="currentColor">
+                <path
+                  fillRule="evenodd"
+                  d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 01.628.74v2.288a2.25 2.25 0 01-.659 1.59l-4.682 4.683a2.25 2.25 0 00-.659 1.59v3.037c0 .484-.235.936-.632 1.218l-2.25 1.6a.75.75 0 01-1.18-.618v-5.237a2.25 2.25 0 00-.659-1.59L2.659 6.22A2.25 2.25 0 012 4.629V2.34a.75.75 0 01.628-.740z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              Filter Rooms
+              {activeFiltersCount > 0 && (
+                <span className="flex size-5 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </button>
+
+            <Button
+              onClick={handleOpenNewModal}
+              className="flex items-center gap-2 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            >
+              <svg viewBox="0 0 20 20" className="size-4" fill="currentColor">
+                <path d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" />
+              </svg>
+              Book Room
+            </Button>
+          </div>
         </div>
+
+        {/* Room selection pills */}
         <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1">
-          {rooms.map((r) => {
-            const active = r.id === roomId
-            return (
-              <button
-                key={r.id}
-                onClick={() => setRoomId(r.id)}
-                className={`group flex shrink-0 items-center gap-3 rounded-xl border px-4 py-2.5 text-left transition ${
-                  active
-                    ? 'border-indigo-300 bg-indigo-50 ring-1 ring-indigo-300'
-                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                <div>
-                  <p
-                    className={`text-sm font-semibold ${active ? 'text-indigo-800' : 'text-slate-800'}`}
-                  >
-                    {r.name}
-                  </p>
-                  <p className={`text-xs ${active ? 'text-indigo-500' : 'text-slate-400'}`}>
-                    Floor {r.floor}
-                  </p>
-                </div>
-                <Badge
-                  className={
-                    active ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
-                  }
+          {filteredRooms.length === 0 ? (
+            <div className="py-2 text-sm text-slate-500">
+              No rooms match your filter criteria. Try resetting filters.
+            </div>
+          ) : (
+            filteredRooms.map((r) => {
+              const active = r.id === roomId
+              return (
+                <button
+                  key={r.id}
+                  onClick={() => setRoomId(r.id)}
+                  className={`group flex shrink-0 items-center gap-3 rounded-xl border px-4 py-2.5 text-left transition ${
+                    active
+                      ? 'border-indigo-300 bg-indigo-50 ring-1 ring-indigo-300'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                  }`}
                 >
-                  <svg viewBox="0 0 20 20" className="size-3" fill="currentColor">
-                    <path d="M7 8a3 3 0 100-6 3 3 0 000 6zM13.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM2 16.5C2 13.5 4.2 12 7 12s5 1.5 5 4.5V17H2v-.5zM13.4 12c2 .3 3.6 1.6 3.6 4.5v.5h-3.2c.1-1.9-.4-3.5-1.4-4.7.3 0 .7-.2 1-.3z" />
-                  </svg>
-                  {r.capacity}
-                </Badge>
-              </button>
-            )
-          })}
+                  <div>
+                    <p
+                      className={`text-sm font-semibold ${
+                        active ? 'text-indigo-800' : 'text-slate-800'
+                      }`}
+                    >
+                      {r.name}
+                    </p>
+                    <p className={`text-xs ${active ? 'text-indigo-500' : 'text-slate-400'}`}>
+                      Floor {r.floor}
+                    </p>
+                  </div>
+                  <Badge
+                    className={
+                      active ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
+                    }
+                  >
+                    <svg viewBox="0 0 20 20" className="size-3" fill="currentColor">
+                      <path d="M7 8a3 3 0 100-6 3 3 0 000 6zM13.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM2 16.5C2 13.5 4.2 12 7 12s5 1.5 5 4.5V17H2v-.5zM13.4 12c2 .3 3.6 1.6 3.6 4.5v.5h-3.2c.1-1.9-.4-3.5-1.4-4.7.3 0 .7-.2 1-.3z" />
+                    </svg>
+                    {r.capacity}
+                  </Badge>
+                </button>
+              )
+            })
+          )}
         </div>
       </div>
 
       {/* Timezone banner */}
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-slate-800 px-4 py-3 text-sm">
-        <svg viewBox="0 0 24 24" className="size-5 shrink-0 text-slate-300" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <svg
+          viewBox="0 0 24 24"
+          className="size-5 shrink-0 text-slate-300"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.8}
+        >
           <circle cx="12" cy="12" r="9" />
           <path d="M12 7v5l3 2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -282,7 +402,13 @@ export function CalendarView() {
             aria-label="Previous week"
             className="flex size-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
           >
-            <svg viewBox="0 0 20 20" className="size-4" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              viewBox="0 0 20 20"
+              className="size-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M12 5l-5 5 5 5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
@@ -291,7 +417,13 @@ export function CalendarView() {
             aria-label="Next week"
             className="flex size-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
           >
-            <svg viewBox="0 0 20 20" className="size-4" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg
+              viewBox="0 0 20 20"
+              className="size-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
               <path d="M8 5l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
@@ -305,10 +437,11 @@ export function CalendarView() {
         <p className="font-display text-base font-semibold text-slate-800">{rangeLabel}</p>
       </div>
 
-      {/* Grid */}
+      {/* Grid container */}
       <div className="overflow-hidden rounded-2xl border border-slate-300 bg-[#F8FAFC] shadow-sm shadow-slate-900/[0.04]">
         <div className="overflow-x-auto">
           <div className="min-w-[720px]">
+            {/* Header row */}
             <div
               className="sticky top-0 z-20 grid border-b border-slate-300 bg-slate-100"
               style={{ gridTemplateColumns: `56px repeat(7, 1fr)` }}
@@ -316,7 +449,10 @@ export function CalendarView() {
               <div className="border-r border-slate-300" />
               {days.map((d, i) => {
                 const p = calParts(d)
-                const isToday = calParts(today).y === p.y && calParts(today).mo === p.mo && calParts(today).d === p.d
+                const isToday =
+                  calParts(today).y === p.y &&
+                  calParts(today).mo === p.mo &&
+                  calParts(today).d === p.d
                 return (
                   <div
                     key={d.toISOString()}
@@ -343,7 +479,7 @@ export function CalendarView() {
               })}
             </div>
 
-            {/* Time body */}
+            {/* Time grid body */}
             <div
               ref={scrollRef}
               className="grid"
@@ -365,7 +501,10 @@ export function CalendarView() {
               {/* Day columns */}
               {days.map((d, dayIdx) => {
                 const p = calParts(d)
-                const isToday = calParts(today).y === p.y && calParts(today).mo === p.mo && calParts(today).d === p.d
+                const isToday =
+                  calParts(today).y === p.y &&
+                  calParts(today).mo === p.mo &&
+                  calParts(today).d === p.d
                 return (
                   <div
                     key={d.toISOString()}
@@ -385,7 +524,13 @@ export function CalendarView() {
                         aria-label={`Book ${l}`}
                       >
                         <span className="flex size-6 items-center justify-center rounded-full bg-indigo-600 text-white opacity-0 shadow-sm transition group-hover:opacity-100">
-                          <svg viewBox="0 0 20 20" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2.4}>
+                          <svg
+                            viewBox="0 0 20 20"
+                            className="size-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2.4}
+                          >
                             <path d="M10 5v10M5 10h10" strokeLinecap="round" />
                           </svg>
                         </span>
@@ -394,12 +539,11 @@ export function CalendarView() {
 
                     {/* Booking cards */}
                     {byDay[dayIdx].map((b) => {
-                      // FIX 3: Розпах карток відносно часу офісу
                       const top = (officeMinutesFromOpen(b.startTime) / 30) * SLOT_H
                       const dur = durationMinutes(b.startTime, b.endTime)
                       const height = Math.max((dur / 30) * SLOT_H - 3, 22)
                       const mine = b.userId === user?.id
-                      
+
                       const timeStr = `${formatInZone(b.startTime, localTz, {
                         hour: '2-digit',
                         minute: '2-digit',
@@ -434,7 +578,13 @@ export function CalendarView() {
                                 aria-label="Cancel booking"
                                 className="-mr-0.5 -mt-0.5 rounded p-0.5 text-blue-100 transition hover:bg-blue-800 hover:text-white"
                               >
-                                <svg viewBox="0 0 20 20" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2}>
+                                <svg
+                                  viewBox="0 0 20 20"
+                                  className="size-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth={2}
+                                >
                                   <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round" />
                                 </svg>
                               </button>
@@ -488,7 +638,8 @@ export function CalendarView() {
           <span className="size-3 rounded border-l-2 border-l-blue-700 bg-[#2563EB]" /> Your booking
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="size-3 rounded border-l-2 border-l-slate-400 bg-[#E2E8F0]" /> Booked by others
+          <span className="size-3 rounded border-l-2 border-l-slate-400 bg-[#E2E8F0]" /> Booked by
+          others
         </span>
         <span className="flex items-center gap-1.5">
           <span className="relative flex items-center">
@@ -499,6 +650,7 @@ export function CalendarView() {
         </span>
       </div>
 
+      {/* Booking Modal */}
       <BookingModal
         open={!!draft}
         draft={draft}
@@ -508,14 +660,31 @@ export function CalendarView() {
         onCreated={onCreated}
       />
 
+      {/* Filter Modal */}
+      <FilterModal
+        open={isFilterOpen}
+        floors={availableFloors}
+        filters={filters}
+        onClose={() => setIsFilterOpen(false)}
+        onApply={(newFilters) => setFilters(newFilters)}
+        onReset={() =>
+          setFilters({
+            floor: 'all',
+            minCapacity: 0,
+            search: '',
+            sortBy: 'name',
+            sortOrder: 'asc',
+          })
+        }
+      />
+
+      {/* Confirmation Dialog */}
       <ConfirmDialog
         open={!!cancelTarget}
         title="Cancel this booking?"
         message="This will free up the slot for others. This action cannot be undone."
         detail={
-          cancelTarget
-            ? `${cancelTarget.title} · ${room?.name ?? ''}`
-            : undefined
+          cancelTarget ? `${cancelTarget.title} · ${room?.name ?? ''}` : undefined
         }
         confirmLabel={cancelling ? 'Cancelling…' : 'Yes, Cancel'}
         loading={cancelling}

@@ -1,6 +1,6 @@
 import axios from 'axios'
 import type { Booking, Room, User } from '../lib/types'
-import type { ApiClient, CursorPaginatedResponse } from './types'
+import type { ApiClient, CursorPaginatedResponse, GetRoomsParams } from './types'
 
 const http = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:4000/api/v1',
@@ -31,8 +31,8 @@ export const realApi: ApiClient = {
     return unwrap(data)
   },
 
-  async listRooms() {
-    const { data } = await http.get<Room[]>('/rooms')
+  async listRooms(params) {
+    const { data } = await http.get<Room[]>('/rooms', { params })
     return unwrap(data)
   },
 

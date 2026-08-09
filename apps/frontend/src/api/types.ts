@@ -12,12 +12,18 @@ export interface DateRangeBookingsRequest {
   endDate: string
 }
 
+export interface GetRoomsParams {
+  minCapacity?: number
+  sortBy?: 'name' | 'capacity' | 'floor'
+  sortOrder?: 'asc' | 'desc'
+}
+
 export interface ApiClient {
   register(name: string, email: string, password: string): Promise<User>
   login(email: string, password: string): Promise<User>
   logout(): Promise<void>
   me(): Promise<User>
-  listRooms(): Promise<Room[]>
+  listRooms(params?: GetRoomsParams): Promise<Room[]>
   listBookings(params: DateRangeBookingsRequest): Promise<Booking[]>
   myBookings(params: { type?: 'upcoming' | 'past'; cursor?: string; limit?: number }): Promise<CursorPaginatedResponse<Booking>>
   createBooking(input: {
