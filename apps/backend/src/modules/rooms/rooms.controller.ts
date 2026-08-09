@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { RoomsService } from './rooms.service';
-import { createRoomSchema, updateRoomSchema } from './dto/create-room.dto';
+import { createRoomSchema, getRoomsQuerySchema, updateRoomSchema } from './dto/create-room.dto';
 import { prisma } from '../../database/prisma.service';
 
 export class RoomsController {
@@ -25,7 +25,12 @@ export class RoomsController {
 
   async getAll(req: Request, res: Response, next: NextFunction) {
     try {
-      const rooms = await this.roomsService.getAll();
+      const parseResult = getRoomsQuerySchema.safeParse(req.query);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: parseResult.error.issues[0].message });
+      }
+
+      const rooms = await this.roomsService.getAll(parseResult.data);
       res.status(200).json(rooms);
     } catch (error) {
       next(error);

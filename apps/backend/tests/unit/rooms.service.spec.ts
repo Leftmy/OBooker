@@ -38,7 +38,7 @@ describe('RoomsService Unit Tests', () => {
   });
 
   describe('getAllRooms', () => {
-    it('should return array of rooms sorted by name', async () => {
+    it('should return array of rooms sorted by name by default', async () => {
       // Arrange
       const mockRooms = [
         { id: '1', name: 'A Room', capacity: 10, floor: 1 },
@@ -51,7 +51,30 @@ describe('RoomsService Unit Tests', () => {
 
       // Assert
       expect(prismaMock.room.findMany).toHaveBeenCalledWith({
+        where: {},
         orderBy: { name: 'asc' }
+      });
+      expect(result).toEqual(mockRooms);
+    });
+
+    it('should filter rooms by minCapacity and custom sort order when query provided', async () => {
+      // Arrange
+      const mockRooms = [{ id: '2', name: 'B Room', capacity: 20, floor: 2 }];
+      prismaMock.room.findMany.mockResolvedValue(mockRooms);
+
+      // Act
+      const result = await service.getAll({
+        minCapacity: 15,
+        sortBy: 'capacity',
+        sortOrder: 'desc',
+      });
+
+      // Assert
+      expect(prismaMock.room.findMany).toHaveBeenCalledWith({
+        where: {
+          capacity: { gte: 15 },
+        },
+        orderBy: { capacity: 'desc' },
       });
       expect(result).toEqual(mockRooms);
     });

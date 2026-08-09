@@ -10,3 +10,15 @@ export type CreateRoomDto = z.infer<typeof createRoomSchema>;
 
 export const updateRoomSchema = createRoomSchema.partial();
 export type UpdateRoomDto = z.infer<typeof updateRoomSchema>;
+
+export const getRoomsQuerySchema = z.object({
+  minCapacity: z.coerce
+    .number({ message: 'minCapacity must be a number' })
+    .int('minCapacity must be an integer')
+    .positive('minCapacity must be a positive integer')
+    .optional(),
+  sortBy: z.enum(['name', 'capacity', 'floor']).optional().default('name'),
+  sortOrder: z.enum(['asc', 'desc']).optional().default('asc'),
+});
+
+export type GetRoomsQueryDto = z.infer<typeof getRoomsQuerySchema>;

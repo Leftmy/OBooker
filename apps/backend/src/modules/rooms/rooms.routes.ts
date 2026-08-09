@@ -47,14 +47,41 @@
  *               error: "Unauthorized"
  */
 /**
- * @openapi
+* @openapi
  * /api/v1/rooms:
  *   get:
  *     tags: [Rooms]
  *     summary: List rooms
- *     description: Retrieve a list of all rooms. Requires authentication.
+ *     description: Retrieve a list of all rooms with optional filtering by capacity and sorting. Requires authentication.
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: minCapacity
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Filter rooms by minimum capacity
+ *         example: 10
+ *       - in: query
+ *         name: sortBy
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [name, capacity, floor]
+ *           default: name
+ *         description: Field to sort rooms by
+ *         example: capacity
+ *       - in: query
+ *         name: sortOrder
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: asc
+ *         description: Sort order direction
+ *         example: desc
  *     responses:
  *       200:
  *         description: Rooms returned successfully
@@ -73,6 +100,14 @@
  *                 name: "Aquarium"
  *                 capacity: 5
  *                 floor: 2
+ *       400:
+ *         description: Invalid query parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *             example:
+ *               error: "minCapacity must be a positive integer"
  *       401:
  *         description: Unauthorized
  *         content:

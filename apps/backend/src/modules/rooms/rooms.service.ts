@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { CreateRoomDto, UpdateRoomDto } from './dto/create-room.dto';
+import { CreateRoomDto, GetRoomsQueryDto, UpdateRoomDto } from './dto/create-room.dto';
 
 export class RoomsService {
   constructor(private prisma: PrismaClient) {}
@@ -8,9 +8,16 @@ export class RoomsService {
     return this.prisma.room.create({ data });
   }
 
-  async getAll() {
+  async getAll(query?: GetRoomsQueryDto) {
+    const { minCapacity, sortBy = 'name', sortOrder = 'asc' } = query || {};
+
     return this.prisma.room.findMany({
-      orderBy: { name: 'asc' },
+      where: {
+        ...(minCapacity ? { capacity: { gte: minCapacity } } : {}),
+      },
+      orderBy: {
+        [sortBy]: sortOrder,
+      },
     });
   }
 
