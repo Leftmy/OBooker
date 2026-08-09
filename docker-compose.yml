@@ -41,5 +41,18 @@ services:
       postgres:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: "${VITE_API_URL:-http://localhost:4000/api/v1}"
+        VITE_USE_MOCK: "${VITE_USE_MOCK:-false}"
+    container_name: obooker_frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
 volumes:
   pgdata:

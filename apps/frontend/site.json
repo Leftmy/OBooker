@@ -1,0 +1,10 @@
+{
+  "description": "Effortlessly book and manage office meeting rooms with an intuitive calendar interface, ensuring efficient scheduling and seamless collaboration.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
