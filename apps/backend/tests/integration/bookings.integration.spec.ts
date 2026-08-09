@@ -100,6 +100,32 @@ describe('Bookings API Integration Tests', () => {
       expect(response.body.error).toMatch(/already booked/i);
     });
 
+    it('should handle concurrent requests for the same slot and create exactly one booking', async () => {
+      const startTime = '2026-09-10T10:00:00Z';
+      const endTime = '2026-09-10T11:00:00Z';
+
+      const concurrentRequests = Array.from({ length: 10 }).map((_, index) =>
+        request(app)
+          .post('/api/v1/bookings')
+          .set('Cookie', [authCookie])
+          .send({
+            title: `Concurrent Meeting ${index}`,
+            roomId: testRoomId,
+            startTime,
+            endTime,
+          }),
+      );
+
+      const responses = await Promise.all(concurrentRequests);
+
+      const created = responses.filter((res) => res.status === 201);
+      const conflicts = responses.filter((res) => res.status === 409);
+
+      // ONLY 1 request must be successful (201), other 9 - return conflict (409)
+      expect(created).toHaveLength(1);
+      expect(conflicts).toHaveLength(9);
+    });
+
     it('should fail with 400 when startTime is after endTime', async () => {
       await request(app)
         .post('/api/v1/bookings')

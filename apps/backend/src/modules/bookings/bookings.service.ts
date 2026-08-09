@@ -47,15 +47,28 @@ export class BookingsService {
       throw new Error('Room is already booked for this time range');
     }
 
-    return await this.prisma.booking.create({
-      data: {
-        title: dto.title,
-        userId,
-        roomId,
-        startTime: start,
-        endTime: end,
-      },
-    });
+    try {
+      return await this.prisma.booking.create({
+        data: {
+          title: dto.title,
+          userId,
+          roomId,
+          startTime: start,
+          endTime: end,
+        },
+      });
+    } catch (error: any) {
+      const isExclusionConflict =
+        error?.code === '23P01' ||
+        error?.message?.includes('23P01') ||
+        error?.message?.includes('exclusion constraint');
+
+      if (isExclusionConflict) {
+        throw new Error('Room is already booked for this time range');
+      }
+
+      throw error;
+    }
   }
 
   async getUserBookings(
